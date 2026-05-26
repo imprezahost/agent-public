@@ -1,0 +1,13 @@
+# Force LF line endings on the shell script so customer VPSes
+# (Linux) read it correctly regardless of the dev's checkout config.
+# Without this, a Windows checkout's autocrlf can convert install.sh
+# to CRLF, customers' bash then fails with
+#   /usr/bin/env: 'bash\r': No such file or directory
+# (the Phase 11 hotfix5 root cause back when this script lived in
+# the imprezaapi WHMCS module).
+*.sh text eol=lf
+
+# Binaries — make sure git doesn't try to merge or text-process them.
+*.tar binary
+*.tar.gz binary
+releases/** binary
