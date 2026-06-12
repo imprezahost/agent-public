@@ -46,14 +46,71 @@ VERSION="${IMPREZA_AGENT_VERSION:-latest}"
 CHANNEL="${IMPREZA_AGENT_CHANNEL:-stable}"
 case "$CHANNEL" in stable|beta) ;; *) die "invalid channel: $CHANNEL" ;; esac
 
+# ─── curl (distro uniformity) ───────────────────────────────────────────
+# Everything below (Docker bootstrap, binary download) needs curl, but
+# minimal Debian images ship without it — Ubuntu cloud images and the
+# RHEL family (Alma/Rocky, via curl-minimal) include it. Someone running
+# this script via `wget -qO- | sh` would otherwise die mid-install.
+if ! command -v curl >/dev/null 2>&1; then
+    say "curl not found — installing via package manager"
+    if command -v apt-get >/dev/null 2>&1; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get -o DPkg::Lock::Timeout=300 update -qq || true
+        apt-get -o DPkg::Lock::Timeout=300 install -y -qq curl ca-certificates || true
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y -q --allowerasing curl ca-certificates || true
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y -q curl ca-certificates || true
+    fi
+    command -v curl >/dev/null 2>&1 || die "curl unavailable and could not be installed"
+fi
+
 # ─── Docker ─────────────────────────────────────────────────────────────
 # The Docker executor needs `docker` + `docker compose` (v2 plugin).
 # Skip with IMPREZA_AGENT_SKIP_DOCKER=1 if Docker is provisioned by an
 # external mechanism (e.g. cloud-init), or if testing without it.
+
+# install_docker — install Docker CE across distros. The official
+# get.docker.com convenience script REFUSES RHEL rebuilds (it exits 1 with
+# "ERROR: Unsupported distribution 'almalinux'" / 'rocky'), which silently
+# broke every Alma/Rocky provision. So on the RHEL family we add Docker's
+# CE repo directly: the CentOS repo resolves $releasever to el9 and serves
+# Alma/Rocky/RHEL/Oracle identically (validated on AlmaLinux 9.7 →
+# docker-ce 29.x + compose v2 plugin). Debian/Ubuntu and anything else
+# get.docker.com supports keep the convenience script.
+install_docker() {
+    _id=""; _like=""
+    if [ -r /etc/os-release ]; then
+        _id=$(. /etc/os-release 2>/dev/null; printf '%s' "${ID:-}")
+        _like=$(. /etc/os-release 2>/dev/null; printf '%s' "${ID_LIKE:-}")
+    fi
+    case " ${_id} ${_like} " in
+        *" rhel "*|*" centos "*|*" almalinux "*|*" rocky "*|*" fedora "*|*" ol "*|*" oracle "*)
+            _repo=centos
+            [ "${_id}" = "fedora" ] && _repo=fedora
+            if command -v dnf >/dev/null 2>&1; then
+                dnf -y install dnf-plugins-core || return 1
+                dnf config-manager --add-repo "https://download.docker.com/linux/${_repo}/docker-ce.repo" || return 1
+                dnf -y install docker-ce docker-ce-cli containerd.io docker-compose-plugin || return 1
+            elif command -v yum >/dev/null 2>&1; then
+                yum -y install yum-utils || return 1
+                yum-config-manager --add-repo "https://download.docker.com/linux/${_repo}/docker-ce.repo" || return 1
+                yum -y install docker-ce docker-ce-cli containerd.io docker-compose-plugin || return 1
+            else
+                return 1
+            fi
+            ;;
+        *)
+            # Debian/Ubuntu and others supported by the convenience script.
+            curl -fsSL https://get.docker.com | sh || return 1
+            ;;
+    esac
+}
+
 if [ "${IMPREZA_AGENT_SKIP_DOCKER:-0}" != "1" ]; then
     if ! command -v docker >/dev/null 2>&1; then
-        say "Docker not found — installing via the official get.docker.com script"
-        if ! curl -fsSL https://get.docker.com | sh; then
+        say "Docker not found — installing Docker CE"
+        if ! install_docker; then
             die "Docker install failed. Set IMPREZA_AGENT_SKIP_DOCKER=1 if Docker is provisioned elsewhere."
         fi
         systemctl enable --now docker || true
