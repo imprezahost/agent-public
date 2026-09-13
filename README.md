@@ -1,7 +1,7 @@
 # Impreza Platform Agent
 
 Public installer and binaries for the Impreza Platform agent.
-Current stable version: **0.6.1**, available for Linux amd64 and arm64.
+Current stable version: **0.6.2**, available for Linux amd64 and arm64.
 
 ## New installations
 
@@ -37,7 +37,7 @@ Custom executable/service paths require a manual update.
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
-- releases/stable/0.6.1/ contains versioned binaries and .sha256 checksums.
+- releases/stable/0.6.2/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
@@ -48,3 +48,7 @@ release; it does not revert database contents or mutable data.
 Agent 0.6.1 deploys the exact Git commit supplied by a webhook or build context.
 If the requested revision cannot be fetched and verified, it fails before
 replacing containers. Deployments without a commit continue to follow the branch.
+
+Agent 0.6.2 reports unsupported commands as failures instead of simulated
+success. It performs no operation for those commands and continues polling.
+Queued agent upgrades remain unsupported; use the update command above.
