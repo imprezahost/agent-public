@@ -2,7 +2,7 @@
 # impreza-agent installer — curl|sh entry point.
 #
 # Usage:
-#   curl -fsSL https://api.imprezahost.com/install.sh | \
+#   curl -fsSL https://raw.githubusercontent.com/imprezahost/agent-public/main/install.sh | \
 #     IMPREZA_BOOTSTRAP=bst_xxxxxxxxxxxxxxxx sh
 #
 # What this does:
@@ -128,16 +128,7 @@ if [ "${IMPREZA_AGENT_SKIP_DOCKER:-0}" != "1" ]; then
 fi
 
 # ─── Download ───────────────────────────────────────────────────────────
-# Phase 11 hotfix14: binaries live in the public GitHub mirror
-# github.com/imprezahost/agent-public — same project that hosts this
-# very script. Customer VPSes pull via raw.githubusercontent.com
-# without any credentials (repo is intentionally public). We mirrored
-# to GitHub because the self-hosted GitLab at git.imprezahost.com has
-# an org policy that disables per-project public visibility, so the
-# previous hotfix13 GitLab URL stayed credential-gated and 404'd from
-# customer VPSes. Override RELEASE_BASE for self-hosted distributors;
-# the default tracks the project's main branch so binary updates are
-# atomic with the install.sh source they're built from.
+# Download public release binaries; distributors may override the release base.
 RELEASE_BASE="${IMPREZA_AGENT_RELEASE_BASE:-https://raw.githubusercontent.com/imprezahost/agent-public/main/releases}"
 BINARY_URL="$RELEASE_BASE/$CHANNEL/$VERSION/impreza-agent-linux-$ARCH"
 
@@ -160,14 +151,7 @@ printf '%s\n' "$HASH" | grep -Eq '^[a-f0-9]{64}$' || die "invalid release checks
 printf '%s  %s\n' "$HASH" "$TMP/impreza-agent" | sha256sum -c - >/dev/null || die "release checksum mismatch"
 chmod +x "$TMP/impreza-agent"
 
-# Phase 11 hotfix14: Caddy sidecar image is pulled by the agent at
-# deploy time from GitHub Container Registry at
-# ghcr.io/imprezahost/caddy:2-cf. Built + pushed by the
-# .github/workflows/caddy-image.yml workflow in impreza-devkit on
-# every caddy-v<X.Y.Z> tag; package visibility is flipped to Public
-# so customer VPSes don't need a GHCR PAT. No docker-load gymnastics
-# from a tarball — Docker handles the layer fetch + cache via the
-# standard registry protocol.
+# The agent pulls the public Caddy image when deploying applications.
 
 # ─── Install binary ─────────────────────────────────────────────────────
 say "installing binary to /usr/local/bin/impreza-agent"
@@ -179,7 +163,7 @@ install -m 0755 "$TMP/impreza-agent" /usr/local/bin/impreza-agent
 # systemd fails with status=226/NAMESPACE ("Failed to set up mount
 # namespacing: /var/log/impreza-agent: No such file or directory") and
 # the service enters a restart-loop. install.sh never created these on
-# fresh hosts, so the first start always failed. Phase 11 hotfix.
+# fresh hosts, so the first start always failed.
 mkdir -p /etc/impreza-agent /var/lib/impreza-agent /var/log/impreza-agent
 chmod 0750 /var/lib/impreza-agent /var/log/impreza-agent
 
