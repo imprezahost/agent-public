@@ -33,6 +33,10 @@ if [ -z "${IMPREZA_BOOTSTRAP:-}" ]; then
     die "IMPREZA_BOOTSTRAP is required — issue a token from the panel and re-run."
 fi
 
+if [ -s /etc/impreza-agent/config.toml ]; then
+    die "agent already registered; use https://raw.githubusercontent.com/imprezahost/agent-public/main/update.sh with --apply"
+fi
+
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 [ "$OS" = "linux" ] || die "only Linux is supported (got $OS)"
 
@@ -148,6 +152,12 @@ IMPREZA_UA="${IMPREZA_AGENT_USER_AGENT:-impreza-agent-installer/1.0 (https://imp
 if ! curl -fsSL -A "$IMPREZA_UA" -o "$TMP/impreza-agent" "$BINARY_URL"; then
     die "download failed: $BINARY_URL"
 fi
+if ! curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' -o "$TMP/checksum" "$BINARY_URL.sha256"; then
+    die "release checksum download failed"
+fi
+HASH=$(cat "$TMP/checksum")
+printf '%s\n' "$HASH" | grep -Eq '^[a-f0-9]{64}$' || die "invalid release checksum"
+printf '%s  %s\n' "$HASH" "$TMP/impreza-agent" | sha256sum -c - >/dev/null || die "release checksum mismatch"
 chmod +x "$TMP/impreza-agent"
 
 # Phase 11 hotfix14: Caddy sidecar image is pulled by the agent at
