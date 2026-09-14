@@ -67,3 +67,7 @@ pull/build step finishes before cancellation is confirmed and configuration
 is restored. Existing containers are not replaced. Replacement and recovery
 cannot be cancelled; interrupted agents require operation reconciliation.
 Update only after current operations finish. See [deployment cancellation](https://docs.imprezahost.com/deployment-cancellation.html).
+
+## Deployment progress and saved results
+
+Agent 0.6.6 reports the current deployment step and saves final operation results before delivery. After a restart, saved results are resent without repeating the deployment. Interrupted execution without a saved final result requires support reconciliation; it is not automatically resumed or repeated. Preserve the private agent state directory. Existing agents update explicitly after active operations finish. See [deployment progress](https://docs.imprezahost.com/deployment-progress.html).
