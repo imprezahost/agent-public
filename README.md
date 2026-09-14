@@ -1,7 +1,7 @@
 # Impreza Platform Agent
 
 Public installer and binaries for the Impreza Platform agent.
-Current stable version: **0.6.4**, available for Linux amd64 and arm64.
+Current stable version: **0.6.7**, available for Linux amd64 and arm64.
 
 ## New installations
 
@@ -37,7 +37,7 @@ Custom executable/service paths require a manual update.
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
-- releases/stable/0.6.5/ contains versioned binaries and .sha256 checksums.
+- releases/stable/0.6.7/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
@@ -70,4 +70,8 @@ Update only after current operations finish. See [deployment cancellation](https
 
 ## Deployment progress and saved results
 
-Agent 0.6.6 reports the current deployment step and saves final operation results before delivery. After a restart, saved results are resent without repeating the deployment. Interrupted execution without a saved final result requires support reconciliation; it is not automatically resumed or repeated. Preserve the private agent state directory. Existing agents update explicitly after active operations finish. See [deployment progress](https://docs.imprezahost.com/deployment-progress.html).
+Agent 0.6.6 reports the current deployment step and saves final operation results before delivery. After a restart, saved results are resent without repeating the deployment. Agent 0.6.7 adds verified preparation reconciliation as described below; other interrupted execution requires support. Preserve the private agent state directory. Existing agents update explicitly after active operations finish. See [deployment progress](https://docs.imprezahost.com/deployment-progress.html).
+
+## Interrupted preparation
+
+Agent 0.6.7 persists the previous preparation configuration and completion checkpoints. After restart, it can verify an unstarted operation or completed preparation, restore configuration with unchanged container identities and close the interrupted attempt without executing it again. Wait for the final failure or confirmed cancellation before retrying explicitly. Busy external work, missing checkpoints, container drift and replacement uncertainty remain blocked for support review. It does not resume or kill Docker builds, restore application data or update the fleet automatically. Existing operations do not gain checkpoints retroactively. See [preparation reconciliation](https://docs.imprezahost.com/deployment-progress.html#preparation-recovery).
