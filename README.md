@@ -1,7 +1,7 @@
 # Impreza Platform Agent
 
 Public installer and binaries for the Impreza Platform agent.
-Current stable version: **0.6.7**, available for Linux amd64 and arm64.
+Current stable version: **0.6.8**, available for Linux amd64 and arm64.
 
 ## New installations
 
@@ -37,7 +37,7 @@ Custom executable/service paths require a manual update.
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
-- releases/stable/0.6.7/ contains versioned binaries and .sha256 checksums.
+- releases/stable/0.6.8/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
@@ -74,4 +74,8 @@ Agent 0.6.6 reports the current deployment step and saves final operation result
 
 ## Interrupted preparation
 
-Agent 0.6.7 persists the previous preparation configuration and completion checkpoints. After restart, it can verify an unstarted operation or completed preparation, restore configuration with unchanged container identities and close the interrupted attempt without executing it again. Wait for the final failure or confirmed cancellation before retrying explicitly. Busy external work, missing checkpoints, container drift and replacement uncertainty remain blocked for support review. It does not resume or kill Docker builds, restore application data or update the fleet automatically. Existing operations do not gain checkpoints retroactively. See [preparation reconciliation](https://docs.imprezahost.com/deployment-progress.html#preparation-recovery).
+Agent 0.6.7 persists the previous preparation configuration and completion checkpoints. After restart, it can verify an unstarted operation or completed preparation, restore configuration with unchanged container identities and close the interrupted attempt without executing it again. Wait for the final failure or confirmed cancellation before retrying explicitly. Unsupervised or unconfirmed external work, missing checkpoints, container drift and replacement uncertainty remain blocked for support review. It does not resume or kill Docker builds, restore application data or update the fleet automatically. Existing operations do not gain checkpoints retroactively. See [preparation reconciliation](https://docs.imprezahost.com/deployment-progress.html#preparation-recovery).
+
+## Supervised image preparation
+
+Agent 0.6.8 runs pull/build for controlled deployments in a separate supervised process on Linux with systemd. After an agent restart, it waits for the original worker and verifies its durable successful completion receipt before reconciling preparation. It then validates the operation and unchanged containers, restores previous configuration and closes the interrupted attempt as failed or confirms an existing cancellation request. It never repeats the work or the deployment. Missing or invalid receipts, worker failure or timeout, legacy unsupervised work and replacement uncertainty still require support review. Update explicitly after current operations finish. See [supervised preparation](https://docs.imprezahost.com/deployment-progress.html#supervised-preparation).
