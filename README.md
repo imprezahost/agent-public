@@ -1,7 +1,7 @@
 # Impreza Platform Agent
 
 Public installer and binaries for the Impreza Platform agent.
-Current stable version: **0.6.2**, available for Linux amd64 and arm64.
+Current stable version: **0.6.3**, available for Linux amd64 and arm64.
 
 ## New installations
 
@@ -37,7 +37,7 @@ Custom executable/service paths require a manual update.
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
-- releases/stable/0.6.2/ contains versioned binaries and .sha256 checksums.
+- releases/stable/0.6.3/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
@@ -52,3 +52,5 @@ replacing containers. Deployments without a commit continue to follow the branch
 Agent 0.6.2 reports unsupported commands as failures instead of simulated
 success. It performs no operation for those commands and continues polling.
 Queued agent upgrades remain unsupported; use the update command above.
+
+Agent 0.6.3 supports opt-in required healthy startup. Generated Node deployments can set `require_healthy_start: true` with an explicit `healthcheck_path` and `startup_timeout_seconds` from 30 to 600 (default 60). The first deployment fails if it does not become healthy; named volumes are preserved. Retained releases keep their own startup policy for automatic recovery and manual rollback. Older agents must be updated explicitly before using this option. See [deployment settings](https://docs.imprezahost.com/tutorials/agent-apps-panels.html#required-startup).
