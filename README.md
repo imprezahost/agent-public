@@ -37,7 +37,7 @@ Custom executable/service paths require a manual update.
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
-- releases/stable/0.6.3/ contains versioned binaries and .sha256 checksums.
+- releases/stable/0.6.5/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
@@ -58,3 +58,12 @@ Agent 0.6.3 supports opt-in required healthy startup. Generated Node deployments
 ## Runtime observations
 
 Agent 0.6.4 reports recent container state separately from the last deployment result. Missing or stale observations remain unknown. A running container without a healthcheck is not declared healthy. The report contains bounded counts and timestamps, without environment variables or healthcheck logs. Update existing servers explicitly using the command above. See [runtime health](https://docs.imprezahost.com/runtime-health.html).
+
+
+## Deployment cancellation
+
+Agent 0.6.5 supports cancellation at preparation checkpoints. The current
+pull/build step finishes before cancellation is confirmed and configuration
+is restored. Existing containers are not replaced. Replacement and recovery
+cannot be cancelled; interrupted agents require operation reconciliation.
+Update only after current operations finish. See [deployment cancellation](https://docs.imprezahost.com/deployment-cancellation.html).
