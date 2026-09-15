@@ -1,7 +1,7 @@
 # Impreza Platform Agent
 
 Public installer and binaries for the Impreza Platform agent.
-Current stable version: **0.6.9**, available for Linux amd64 and arm64.
+Current stable version: **0.6.10**, available for Linux amd64 and arm64.
 
 ## New installations
 
@@ -37,7 +37,7 @@ Custom executable/service paths require a manual update.
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
-- releases/stable/0.6.9/ contains versioned binaries and .sha256 checksums.
+- releases/stable/0.6.10/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
@@ -83,3 +83,7 @@ Agent 0.6.8 runs pull/build for controlled deployments in a separate supervised 
 ## Supervised container replacement
 
 Agent 0.6.9 keeps the authorized replacement, startup checks, lifecycle hooks, routes and normal startup recovery in a separate supervised worker on Linux with systemd. After an agent restart, it waits for that original worker and delivers its verified final result without executing the deployment again. Missing or invalid receipts, worker loss or timeout, old unsupervised jobs, data ownership changes and onion provisioning still require support. Preserve the private operation journal and update explicitly after current operations finish. See [supervised replacement](https://docs.imprezahost.com/deployment-progress.html#supervised-replacement).
+
+## API transport protection
+
+Agent 0.6.10 refuses HTTP redirects for API requests, including bootstrap, polling and heartbeat requests carrying agent credentials. Configure the final API URL directly. Existing servers receive this protection after an explicit agent update; installing a newer SDK on another machine does not update the agent executable. Update after active deployment operations finish, then confirm version 0.6.10 after the next heartbeat.
