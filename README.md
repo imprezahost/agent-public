@@ -1,7 +1,7 @@
 # Impreza Platform Agent
 
 Public installer and binaries for the Impreza Platform agent.
-Current stable version: **0.6.8**, available for Linux amd64 and arm64.
+Current stable version: **0.6.9**, available for Linux amd64 and arm64.
 
 ## New installations
 
@@ -37,7 +37,7 @@ Custom executable/service paths require a manual update.
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
-- releases/stable/0.6.8/ contains versioned binaries and .sha256 checksums.
+- releases/stable/0.6.9/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
@@ -79,3 +79,7 @@ Agent 0.6.7 persists the previous preparation configuration and completion check
 ## Supervised image preparation
 
 Agent 0.6.8 runs pull/build for controlled deployments in a separate supervised process on Linux with systemd. After an agent restart, it waits for the original worker and verifies its durable successful completion receipt before reconciling preparation. It then validates the operation and unchanged containers, restores previous configuration and closes the interrupted attempt as failed or confirms an existing cancellation request. It never repeats the work or the deployment. Missing or invalid receipts, worker failure or timeout, legacy unsupervised work and replacement uncertainty still require support review. Update explicitly after current operations finish. See [supervised preparation](https://docs.imprezahost.com/deployment-progress.html#supervised-preparation).
+
+## Supervised container replacement
+
+Agent 0.6.9 keeps the authorized replacement, startup checks, lifecycle hooks, routes and normal startup recovery in a separate supervised worker on Linux with systemd. After an agent restart, it waits for that original worker and delivers its verified final result without executing the deployment again. Missing or invalid receipts, worker loss or timeout, old unsupervised jobs, data ownership changes and onion provisioning still require support. Preserve the private operation journal and update explicitly after current operations finish. See [supervised replacement](https://docs.imprezahost.com/deployment-progress.html#supervised-replacement).
