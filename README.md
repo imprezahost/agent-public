@@ -1,7 +1,7 @@
 # Impreza Platform Agent
 
 Public installer and binaries for the Impreza Platform agent.
-Current stable version: **0.6.11**, available for Linux amd64 and arm64.
+Current stable version: **0.6.12**, available for Linux amd64 and arm64.
 
 ## New installations
 
@@ -37,7 +37,7 @@ Custom executable/service paths require a manual update.
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
-- releases/stable/0.6.10/ contains versioned binaries and .sha256 checksums.
+- releases/stable/0.6.12/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
@@ -62,7 +62,7 @@ Agent 0.6.4 reports recent container state separately from the last deployment r
 
 ## Deployment cancellation
 
-Agent 0.6.5 supports cancellation at preparation checkpoints. The current
+Agent 0.6.5 supports cancellation at preparation checkpoints. Without controlled builds enabled, the current
 pull/build step finishes before cancellation is confirmed and configuration
 is restored. Existing containers are not replaced. Replacement and recovery
 cannot be cancelled; interrupted agents require operation reconciliation.
@@ -74,7 +74,7 @@ Agent 0.6.6 reports the current deployment step and saves final operation result
 
 ## Interrupted preparation
 
-Agent 0.6.7 persists the previous preparation configuration and completion checkpoints. After restart, it can verify an unstarted operation or completed preparation, restore configuration with unchanged container identities and close the interrupted attempt without executing it again. Wait for the final failure or confirmed cancellation before retrying explicitly. Unsupervised or unconfirmed external work, missing checkpoints, container drift and replacement uncertainty remain blocked for support review. It does not resume or kill Docker builds, restore application data or update the fleet automatically. Existing operations do not gain checkpoints retroactively. See [preparation reconciliation](https://docs.imprezahost.com/deployment-progress.html#preparation-recovery).
+Agent 0.6.7 persists the previous preparation configuration and completion checkpoints. After restart, it can verify an unstarted operation or completed preparation, restore configuration with unchanged container identities and close the interrupted attempt without executing it again. Wait for the final failure or confirmed cancellation before retrying explicitly. Unsupervised or unconfirmed external work, missing checkpoints, container drift and replacement uncertainty remain blocked for support review. Checkpoint reconciliation does not resume or kill Docker builds, restore application data or update the fleet automatically. Agent 0.6.12 adds the separately enabled controlled-build behavior below. Existing operations do not gain checkpoints retroactively. See [preparation reconciliation](https://docs.imprezahost.com/deployment-progress.html#preparation-recovery).
 
 ## Supervised image preparation
 
@@ -87,3 +87,33 @@ Agent 0.6.9 keeps the authorized replacement, startup checks, lifecycle hooks, r
 ## API transport protection
 
 Agent 0.6.10 refuses HTTP redirects for API requests, including bootstrap, polling and heartbeat requests carrying agent credentials. Configure the final API URL directly. Existing servers receive this protection after an explicit agent update; installing a newer SDK on another machine does not update the agent executable. Update after active deployment operations finish, then confirm version 0.6.10 after the next heartbeat.
+
+## Controlled builds
+
+Agent 0.6.12 adds an optional owned build executor on Ubuntu 24.04 amd64 with
+systemd, AppArmor, local Docker, Buildx and a Compose version supporting an
+explicit builder. After upgrading the agent, an administrator can run:
+
+```sh
+sudo impreza-agent builder prepare
+sudo impreza-agent builder status
+```
+
+Preparation verifies a pinned archive checksum and immutable image identity
+before enabling the mode for future builds. Existing work and applications
+are unchanged. Disable it for future builds with `sudo impreza-agent builder disable`.
+Other platforms retain checkpoint cancellation.
+
+With this mode enabled, cancellation from the portal or MCP can stop the owned
+build executor before application replacement. The agent confirms cancellation
+only after verified cleanup and configuration restoration. Recovery after agent
+or host interruption requires matching private identity evidence and authenticated
+operation state; missing or inconsistent evidence remains blocked for support.
+Deployment work is never replayed automatically.
+
+The rootless executor has bounded CPU, memory and PIDs and no host Docker socket
+or bind mount. Its required container-local security exceptions do not provide
+a hostile-code sandbox or build-network egress filtering. Review project code
+before supplying build credentials. Build cache is disposable between jobs.
+
+See [controlled build setup and limits](https://docs.imprezahost.com/deployment-cancellation.html#controlled-builds).
