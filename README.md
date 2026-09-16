@@ -1,7 +1,7 @@
 # Impreza Platform Agent
 
 Public installer and binaries for the Impreza Platform agent.
-Current stable version: **0.6.10**, available for Linux amd64 and arm64.
+Current stable version: **0.6.11**, available for Linux amd64 and arm64.
 
 ## New installations
 
