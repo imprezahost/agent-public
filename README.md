@@ -1,7 +1,7 @@
 # Impreza Platform Agent
 
 Public installer and binaries for the Impreza Platform agent.
-Current stable version: **0.6.13**, available for Linux amd64 and arm64.
+Current stable version: **0.6.15**, available for Linux amd64 and arm64.
 
 ## New installations
 
@@ -37,7 +37,7 @@ Custom executable/service paths require a manual update.
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
-- releases/stable/0.6.13/ contains versioned binaries and .sha256 checksums.
+- releases/stable/0.6.15/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
@@ -123,3 +123,11 @@ stable database owner and dedicated login. Removal verifies the replacement,
 disables the login and retains database data. Durable verified results survive
 agent/server restarts; incomplete replacement still requires support review.
 Credential rotation is not included. See the [connection guide](https://docs.imprezahost.com/service-bindings.html).
+
+## Required health during credential rotation
+
+Agent 0.6.15 requires a Docker healthcheck reporting healthy before PostgreSQL
+credential rotation or abandonment can disable an unused login. Missing or optional
+startup policies are refused; create a fresh review with the updated API. Health
+assurance depends on the application healthcheck. Update explicitly after active
+operations finish. See the [connection guide](https://docs.imprezahost.com/service-bindings.html).
