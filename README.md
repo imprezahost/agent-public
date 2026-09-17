@@ -1,7 +1,7 @@
 # Impreza Platform Agent
 
 Public installer and binaries for the Impreza Platform agent.
-Current stable version: **0.6.12**, available for Linux amd64 and arm64.
+Current stable version: **0.6.13**, available for Linux amd64 and arm64.
 
 ## New installations
 
@@ -37,7 +37,7 @@ Custom executable/service paths require a manual update.
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
-- releases/stable/0.6.12/ contains versioned binaries and .sha256 checksums.
+- releases/stable/0.6.13/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
@@ -117,3 +117,9 @@ a hostile-code sandbox or build-network egress filtering. Review project code
 before supplying build credentials. Build cache is disposable between jobs.
 
 See [controlled build setup and limits](https://docs.imprezahost.com/deployment-cancellation.html#controlled-builds).
+
+Agent 0.6.13 adds reviewed PostgreSQL application connections with a separate
+stable database owner and dedicated login. Removal verifies the replacement,
+disables the login and retains database data. Durable verified results survive
+agent/server restarts; incomplete replacement still requires support review.
+Credential rotation is not included. See the [connection guide](https://docs.imprezahost.com/service-bindings.html).
