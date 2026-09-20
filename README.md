@@ -135,3 +135,14 @@ operations finish. See the [connection guide](https://docs.imprezahost.com/servi
 ## Reviewed routing and data workflows
 
 Agent 0.6.16 adds reviewed traffic switches, password-protected previews, PostgreSQL backup verification and assisted restoration into a new database. The IPv4 Docker egress baseline covers standard bridges only; it is not a complete network sandbox. Existing servers update explicitly with the command above after active deployments finish. See the [deployment safety guide](https://docs.imprezahost.com/deployment-safety.html).
+
+## Release metadata validation
+
+The updater accepts a single numeric version and a single SHA-256 value with LF
+or CRLF line endings. Empty, multiline or malformed metadata is rejected before
+replacing the installed agent. Release metadata in this repository uses LF.
+
+Before publishing, run `python3 -m unittest discover -s tests` on Linux and test
+both `--check` and `--apply` without `IMPREZA_AGENT_VERSION` on a disposable server.
+The final verification must use the published updater and automatic stable-version
+discovery, in addition to checking the downloaded executable.

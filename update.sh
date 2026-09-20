@@ -9,7 +9,7 @@ main() {
     [ "$(id -u)" -eq 0 ] || { echo 'Run as root.' >&2; exit 1; }
     [ "$(uname -s)" = Linux ] || { echo 'Linux is required.' >&2; exit 1; }
     case "$(uname -m)" in x86_64|amd64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; *) echo 'Unsupported architecture.' >&2; exit 1;; esac
-    for tool in curl sha256sum flock systemctl timeout sort; do command -v "$tool" >/dev/null || { echo "Missing dependency: $tool" >&2; exit 1; }; done
+    for tool in curl sha256sum flock systemctl timeout sort awk; do command -v "$tool" >/dev/null || { echo "Missing dependency: $tool" >&2; exit 1; }; done
     BIN=/usr/local/bin/impreza-agent
     [ -f "$BIN" ] && [ ! -L "$BIN" ] && [ -s /etc/impreza-agent/config.toml ] || { echo 'No standard registered agent installation found. Configuration will not be changed.' >&2; exit 1; }
     systemctl cat impreza-agent.service >/dev/null || exit 1
@@ -39,16 +39,33 @@ main() {
     }
     trap finish EXIT
     trap 'exit 130' HUP INT TERM
-    if [ -n "${IMPREZA_AGENT_VERSION:-}" ]; then VERSION=$IMPREZA_AGENT_VERSION; else fetch "$ROOT/version.txt" "$TMP/version"; VERSION=$(cat "$TMP/version"); fi
-    printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo 'Invalid release version.' >&2; exit 1; }
+    # Accept exactly one ASCII metadata line, with LF, CRLF or no final newline.
+    # Never delete embedded control characters or accept one valid line among others.
+    read_metadata() {
+        LC_ALL=C awk -v kind="$2" '
+            NR != 1 { valid = 0; exit }
+            {
+                sub(/\r$/, "")
+                if (kind == "version") valid = ($0 ~ /^[0-9]+\.[0-9]+\.[0-9]+$/)
+                else valid = (length($0) == 64 && $0 ~ /^[a-f0-9]+$/)
+                value = $0
+            }
+            END { if (NR != 1 || !valid) exit 1; print value }
+        ' "$1"
+    }
+    if [ -n "${IMPREZA_AGENT_VERSION:-}" ]; then
+        printf '%s' "$IMPREZA_AGENT_VERSION" > "$TMP/version"
+    else
+        fetch "$ROOT/version.txt" "$TMP/version"
+    fi
+    VERSION=$(read_metadata "$TMP/version" version) || { echo 'Invalid release version.' >&2; exit 1; }
     CURRENT=$(timeout 10 "$BIN" --version | sed -n 's/^impreza-agent version v\{0,1\}\([0-9][0-9.]*\)$/\1/p')
     echo "Installed: ${CURRENT:-unknown}; available: $VERSION"
     [ "$MODE" = --apply ] || exit 0
     if [ -n "$CURRENT" ] && [ "$CURRENT" != "$VERSION" ] && [ "$(printf '%s\n%s\n' "$CURRENT" "$VERSION" | sort -V | head -1)" = "$VERSION" ]; then echo 'Downgrade refused.' >&2; exit 1; fi
     NAME=impreza-agent-linux-$ARCH
     fetch "$ROOT/$VERSION/$NAME.sha256" "$TMP/checksum"
-    HASH=$(cat "$TMP/checksum")
-    printf '%s\n' "$HASH" | grep -Eq '^[a-f0-9]{64}$' || { echo 'Invalid release checksum.' >&2; exit 1; }
+    HASH=$(read_metadata "$TMP/checksum" checksum) || { echo 'Invalid release checksum.' >&2; exit 1; }
     fetch "$ROOT/$VERSION/$NAME" "$TMP/candidate"
     printf '%s  %s\n' "$HASH" "$TMP/candidate" | sha256sum -c - >/dev/null || { echo 'Checksum mismatch; installed agent was not changed.' >&2; exit 1; }
     chmod 0755 "$TMP/candidate"

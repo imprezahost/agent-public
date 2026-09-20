@@ -11,3 +11,7 @@
 *.tar binary
 *.tar.gz binary
 releases/** binary
+
+# Release metadata is text even though executable artifacts are binary.
+releases/**/version.txt text eol=lf diff merge
+releases/**/*.sha256 text eol=lf diff merge
