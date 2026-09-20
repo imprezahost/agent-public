@@ -1,7 +1,7 @@
 # Impreza Platform Agent
 
 Public installer and binaries for the Impreza Platform agent.
-Current stable version: **0.6.16**, available for Linux amd64 and arm64.
+Current stable version: **0.6.17**, available for Linux amd64 and arm64.
 
 ## New installations
 
@@ -37,7 +37,7 @@ Custom executable/service paths require a manual update.
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
-- releases/stable/0.6.16/ contains versioned binaries and .sha256 checksums.
+- releases/stable/0.6.17/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
@@ -146,3 +146,9 @@ Before publishing, run `python3 -m unittest discover -s tests` on Linux and test
 both `--check` and `--apply` without `IMPREZA_AGENT_VERSION` on a disposable server.
 The final verification must use the published updater and automatic stable-version
 discovery, in addition to checking the downloaded executable.
+
+## Application metrics and MariaDB connections
+
+Agent 0.6.17 reports per-app resource metrics and supports reviewed MariaDB
+connection creation, removal and credential rotation. Update explicitly after
+active operations finish. See [application operations](https://docs.imprezahost.com/customer-workflows.html).
