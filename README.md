@@ -1,7 +1,7 @@
 # Impreza Platform Agent
 
 Public installer and binaries for the Impreza Platform agent.
-Current stable version: **0.6.15**, available for Linux amd64 and arm64.
+Current stable version: **0.6.16**, available for Linux amd64 and arm64.
 
 ## New installations
 
@@ -37,7 +37,7 @@ Custom executable/service paths require a manual update.
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
-- releases/stable/0.6.15/ contains versioned binaries and .sha256 checksums.
+- releases/stable/0.6.16/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
@@ -131,3 +131,7 @@ credential rotation or abandonment can disable an unused login. Missing or optio
 startup policies are refused; create a fresh review with the updated API. Health
 assurance depends on the application healthcheck. Update explicitly after active
 operations finish. See the [connection guide](https://docs.imprezahost.com/service-bindings.html).
+
+## Reviewed routing and data workflows
+
+Agent 0.6.16 adds reviewed traffic switches, password-protected previews, PostgreSQL backup verification and assisted restoration into a new database. The IPv4 Docker egress baseline covers standard bridges only; it is not a complete network sandbox. Existing servers update explicitly with the command above after active deployments finish. See the [deployment safety guide](https://docs.imprezahost.com/deployment-safety.html).
