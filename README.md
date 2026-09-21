@@ -1,7 +1,7 @@
 # Impreza Platform Agent
 
 Public installer and binaries for the Impreza Platform agent.
-Current stable version: **0.6.17**, available for Linux amd64 and arm64.
+Current stable version: **0.6.18**, available for Linux amd64 and arm64.
 
 ## New installations
 
@@ -37,7 +37,7 @@ Custom executable/service paths require a manual update.
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
-- releases/stable/0.6.17/ contains versioned binaries and .sha256 checksums.
+- releases/stable/0.6.18/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
@@ -152,3 +152,12 @@ discovery, in addition to checking the downloaded executable.
 Agent 0.6.17 reports per-app resource metrics and supports reviewed MariaDB
 connection creation, removal and credential rotation. Update explicitly after
 active operations finish. See [application operations](https://docs.imprezahost.com/customer-workflows.html).
+
+## Database recovery isolation
+
+Agent 0.6.18 supports reviewed PostgreSQL restoration to an eligible binding on
+another host and verified backup plus assisted restore for managed MariaDB
+InnoDB tables. Verification and restore use an operation-specific database
+login, which is removed after successful completion. Unsupported MariaDB
+objects are refused instead of producing an incomplete backup. Update explicitly
+after active operations finish. See [database recovery](https://docs.imprezahost.com/customer-workflows.html#restore).
