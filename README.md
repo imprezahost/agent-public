@@ -1,7 +1,7 @@
 # Impreza Platform Agent
 
 Public installer and binaries for the Impreza Platform agent.
-Current stable version: **0.6.18**, available for Linux amd64 and arm64.
+Current stable version: **0.6.19**, available for Linux amd64 and arm64.
 
 ## New installations
 
@@ -37,7 +37,7 @@ Custom executable/service paths require a manual update.
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
-- releases/stable/0.6.18/ contains versioned binaries and .sha256 checksums.
+- releases/stable/0.6.19/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
@@ -161,3 +161,11 @@ InnoDB tables. Verification and restore use an operation-specific database
 login, which is removed after successful completion. Unsupported MariaDB
 objects are refused instead of producing an incomplete backup. Update explicitly
 after active operations finish. See [database recovery](https://docs.imprezahost.com/customer-workflows.html#restore).
+
+## Onion service controls
+
+Agent 0.6.19 adds onion service profiles, client authorization and reviewed identity
+import, export and rotation. The Tor sidecar uses a pinned multi-architecture image.
+Onion service reconciliation can briefly interrupt onion access while Tor restarts;
+application containers keep running. Update explicitly after active operations finish.
+See [onion services](https://docs.imprezahost.com/onion-services.html).
