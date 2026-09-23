@@ -169,3 +169,10 @@ import, export and rotation. The Tor sidecar uses a pinned multi-architecture im
 Onion service reconciliation can briefly interrupt onion access while Tor restarts;
 application containers keep running. Update explicitly after active operations finish.
 See [onion services](https://docs.imprezahost.com/onion-services.html).
+
+## Private previews and source review
+
+Agent 0.6.20 adds initial reviewer restrictions, retained onion-key purge,
+Tor runtime isolation and signed source advisories. Read the
+[release notes](releases/stable/0.6.20/RELEASE_NOTES.md) for requirements and limits.
+Update explicitly after active operations finish.
