@@ -34,11 +34,29 @@ before updating; this command does not drain the command queue.
 Use IMPREZA_AGENT_VERSION to pin a numeric version; downgrades are refused.
 Custom executable/service paths require a manual update.
 
+## Signed release manifests
+
+Channels publish releases/<channel>/manifest.signed.json, an Ed25519-signed
+manifest naming the current release, its artifact SHA-256 digests, a strictly
+increasing sequence chained to the previous manifest, a short expiry and the
+minimum supported agent version. When a channel publishes a manifest, the
+updater verifies the signature, channel, expiry and sequence before
+downloading, and takes artifact digests from the signed manifest instead of
+sidecar files. Once a manifest has been accepted on a server it is mandatory:
+a later missing, expired, rolled-back or equivocating manifest refuses the
+update instead of falling back to unverified checksums. A channel without a
+manifest keeps the documented checksum behavior; IMPREZA_AGENT_VERSION pins
+always use it. Verification needs python3 and openssl (1.1.1 or newer) on the
+server. IMPREZA_AGENT_CHANNEL selects stable (default) or beta, and
+IMPREZA_AGENT_RELEASE_BASE may point at a mirror such as the .onion artifact
+host, optionally reached through IMPREZA_AGENT_SOCKS_PROXY.
+
 ## Release files
 
 - releases/stable/version.txt identifies the stable release.
 - releases/stable/0.6.19/ contains versioned binaries and .sha256 checksums.
 - releases/stable/latest/ provides the installer-compatible stable alias.
+- releases/<channel>/manifest.signed.json, when present, is the signed channel head.
 - update.sh supports --check and --apply, with concurrent-update protection.
 
 Agent 0.6.0 prepares images before replacement and supports retained-release

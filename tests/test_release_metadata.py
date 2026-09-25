@@ -5,9 +5,12 @@ SCRIPT=(ROOT/'update.sh').read_text()
 PARSER=SCRIPT[SCRIPT.index('    read_metadata() {'):SCRIPT.index('    if [ -n "${IMPREZA_AGENT_VERSION:-}" ]')]
 class ReleaseMetadata(unittest.TestCase):
  def parse(self,data,kind):
-  with tempfile.NamedTemporaryFile() as f:
-   f.write(data);f.flush()
-   return subprocess.run(['sh','-c',PARSER+'\nread_metadata "$1" "$2"','fixture',f.name,kind],capture_output=True)
+  # The parser region carries the verifier heredoc: run it from a file, not
+  # through sh -c, and close the input before sh reads it (Windows locks it).
+  with tempfile.TemporaryDirectory() as d:
+   script=pathlib.Path(d)/'parser.sh';script.write_bytes((PARSER+'\nread_metadata "$1" "$2"\n').encode())
+   source=pathlib.Path(d)/'input';source.write_bytes(data)
+   return subprocess.run(['sh',str(script),str(source),kind],capture_output=True)
  def test_version_line_endings(self):
   for ending in [b'',b'\n',b'\r\n']:
    with self.subTest(ending=ending):
