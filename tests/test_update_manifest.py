@@ -1,5 +1,5 @@
 """Run with python3 -m unittest discover -s tests on Linux."""
-import base64, hashlib, json, os, pathlib, subprocess, tempfile, unittest
+import base64, hashlib, json, os, pathlib, shutil, subprocess, tempfile, unittest
 from datetime import datetime, timedelta, timezone
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -8,6 +8,113 @@ VERIFY_BLOCK = SCRIPT[SCRIPT.index('    # >>> manifest-verify'):SCRIPT.index('  
 DOMAIN = b"impreza-agent-release-v1\x00"
 SPKI_PREFIX = bytes.fromhex("302a300506032b6570032100")
 PKCS8_PREFIX = bytes.fromhex("302e020100300506032b657004220420")
+
+# RFC 8032 section 7.1 test vectors (public data): the Python verifier
+# shipped for OpenSSL 1.1.1 hosts must accept these before anything else.
+RFC8032_VECTORS = [
+    (
+        "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+        "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "",
+        "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+    ),
+    (
+        "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+        "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+        "72",
+        "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+    ),
+    (
+        "c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7",
+        "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025",
+        "af82",
+        "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a",
+    ),
+]
+
+P = 2**255 - 19
+Q = 2**252 + 27742317777372353535851937790883648493
+_D = -121665 * pow(121666, P - 2, P) % P
+
+
+def _inv(x):
+    return pow(x, P - 2, P)
+
+
+def _padd(Ph, Qh):
+    A = (Ph[1] - Ph[0]) * (Qh[1] - Qh[0]) % P
+    B = (Ph[1] + Ph[0]) * (Qh[1] + Qh[0]) % P
+    C = 2 * Ph[3] * Qh[3] * _D % P
+    D = 2 * Ph[2] * Qh[2] % P
+    E, F, G, H = B - A, D - C, D + C, B + A
+    return (E * F % P, G * H % P, F * G % P, E * H % P)
+
+
+def _pmul(s, Ph):
+    Qh = (0, 1, 1, 0)
+    while s > 0:
+        if s & 1:
+            Qh = _padd(Qh, Ph)
+        Ph = _padd(Ph, Ph)
+        s >>= 1
+    return Qh
+
+
+def _pcompress(Ph):
+    zinv = _inv(Ph[2])
+    x = Ph[0] * zinv % P
+    y = Ph[1] * zinv % P
+    return int.to_bytes(y | ((x & 1) << 255), 32, "little")
+
+
+def _pdecompress(s):
+    y = int.from_bytes(s, "little")
+    sign = y >> 255
+    y &= (1 << 255) - 1
+    if y >= P:
+        return None
+    u = (y * y - 1) % P
+    v = (_D * y * y + 1) % P
+    x = pow(u * _inv(v), (P + 3) // 8, P)
+    if (x * x - u * _inv(v)) % P != 0:
+        x = x * pow(2, (P - 1) // 4, P) % P
+    if (x * x - u * _inv(v)) % P != 0:
+        return None
+    if x == 0 and sign:
+        return None
+    if x & 1 != sign:
+        x = P - x
+    return (x, y, 1, x * y % P)
+
+
+_BASE_POINT = _pdecompress(bytes.fromhex("5866666666666666666666666666666666666666666666666666666666666666"))
+
+
+def python_ed25519_sign(seed, message):
+    """Test-side RFC 8032 signer: used when the host openssl cannot sign
+    with -rawin (1.1.1), so the suite signs envelopes there too."""
+    h = hashlib.sha512(seed).digest()
+    a = int.from_bytes(h[:32], "little")
+    a &= (1 << 254) - 8
+    a |= (1 << 254)
+    prefix = h[32:]
+    big_a = _pcompress(_pmul(a, _BASE_POINT))
+    r = int.from_bytes(hashlib.sha512(prefix + message).digest(), "little") % Q
+    r_point = _pcompress(_pmul(r, _BASE_POINT))
+    k = int.from_bytes(hashlib.sha512(r_point + big_a + message).digest(), "little") % Q
+    s = (r + k * a) % Q
+    return r_point + int.to_bytes(s, 32, "little")
+
+
+def write_verify_py(directory):
+    """Materialize the verifier heredoc exactly as update.sh ships it."""
+    start = SCRIPT.index("cat > \"$3/verify.py\" <<'PYMANIFEST'")
+    body_start = SCRIPT.index("\n", start) + 1
+    body_end = SCRIPT.index("\nPYMANIFEST", body_start)
+    path = os.path.join(directory, 'verify.py')
+    with open(path, 'w', newline='\n') as handle:
+        handle.write(SCRIPT[body_start:body_end] + "\n")
+    return path
 
 
 def real_python3():
@@ -46,20 +153,29 @@ class Key:
         der_path = os.path.join(directory, 'key.der')
         with open(der_path, 'wb') as handle:
             handle.write(der)
+        self.seed = seed
         self.private_pem = os.path.join(directory, 'key.pem')
         subprocess.run(['openssl', 'pkey', '-inform', 'DER', '-in', der_path, '-out', self.private_pem], check=True, capture_output=True)
         pub_der = subprocess.run(['openssl', 'pkey', '-in', self.private_pem, '-pubout', '-outform', 'DER'], check=True, capture_output=True).stdout
         self.public_b64 = base64.b64encode(pub_der[-32:]).decode()
 
     def sign(self, message):
+        # OpenSSL 1.1.1 cannot sign with -rawin either; the test-side
+        # RFC 8032 signer covers those hosts (an openssl 3 host still
+        # exercises the openssl signer first).
         message_path = os.path.join(self.directory, 'msg.bin')
         signature_path = os.path.join(self.directory, 'sig.bin')
         with open(message_path, 'wb') as handle:
             handle.write(message)
-        subprocess.run(['openssl', 'pkeyutl', '-sign', '-inkey', self.private_pem, '-rawin',
-                        '-in', message_path, '-out', signature_path], check=True, capture_output=True)
-        with open(signature_path, 'rb') as handle:
-            return handle.read()
+        proc = subprocess.run(['openssl', 'pkeyutl', '-sign', '-inkey', self.private_pem, '-rawin',
+                               '-in', message_path, '-out', signature_path], capture_output=True)
+        if proc.returncode == 0:
+            with open(signature_path, 'rb') as handle:
+                return handle.read()
+        signature = python_ed25519_sign(self.seed, message)
+        with open(signature_path, 'wb') as handle:
+            handle.write(signature)
+        return signature
 
 
 def build_envelope(key, payload_dict):
@@ -299,6 +415,231 @@ class UpdateManifestVerification(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
         finally:
             os.unlink(der)
+
+
+class PythonEd25519Verifier(unittest.TestCase):
+    """The RFC 8032 verifier shipped inside update.sh for OpenSSL 1.1.1
+    hosts, tested directly: the standard vectors first, then the same
+    refusals the openssl path must produce."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.verify_py = write_verify_py(self._tmp.name)
+
+    def run_ed25519(self, public, message, signature):
+        work = tempfile.mkdtemp(dir=self._tmp.name)
+        paths = []
+        for name, data in (('pub.der', public), ('msg.bin', message), ('sig.bin', signature)):
+            path = os.path.join(work, name)
+            with open(path, 'wb') as handle:
+                handle.write(data)
+            paths.append(path)
+        return subprocess.run([real_python3(), self.verify_py, 'ed25519'] + paths,
+                              capture_output=True, text=True)
+
+    def test_rfc8032_vectors_accepted(self):
+        for _, pub, msg, sig in RFC8032_VECTORS:
+            with self.subTest(msg=msg):
+                proc = self.run_ed25519(SPKI_PREFIX + bytes.fromhex(pub),
+                                        bytes.fromhex(msg), bytes.fromhex(sig))
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_rfc8032_vector_signature_byte_flips_refused(self):
+        _, pub, msg, sig = RFC8032_VECTORS[1]
+        raw = bytearray(bytes.fromhex(sig))
+        for position in (0, 31, 32, 63):
+            with self.subTest(position=position):
+                flipped = bytearray(raw)
+                flipped[position] ^= 0x01
+                proc = self.run_ed25519(SPKI_PREFIX + bytes.fromhex(pub),
+                                        bytes.fromhex(msg), bytes(flipped))
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn('signature verification failed', proc.stderr)
+
+    def test_tampered_message_refused(self):
+        _, pub, msg, sig = RFC8032_VECTORS[2]
+        proc = self.run_ed25519(SPKI_PREFIX + bytes.fromhex(pub),
+                                bytes.fromhex(msg) + b'\x00', bytes.fromhex(sig))
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn('signature verification failed', proc.stderr)
+
+    def test_noncanonical_scalar_refused(self):
+        # S >= q must be rejected even though the encoding is 32 bytes.
+        _, pub, msg, sig = RFC8032_VECTORS[0]
+        signature = bytearray(bytes.fromhex(sig))
+        signature[32:] = (Q + 1).to_bytes(32, 'little')
+        proc = self.run_ed25519(SPKI_PREFIX + bytes.fromhex(pub),
+                                bytes.fromhex(msg), bytes(signature))
+        self.assertNotEqual(proc.returncode, 0)
+
+    def test_malformed_trust_key_refused(self):
+        _, pub, msg, sig = RFC8032_VECTORS[0]
+        for spki in (b'', b'\x30' * 44, SPKI_PREFIX + b'\x00' * 31, SPKI_PREFIX + b'\x00' * 33):
+            with self.subTest(len=len(spki)):
+                proc = self.run_ed25519(spki, bytes.fromhex(msg), bytes.fromhex(sig))
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn('trust key', proc.stderr)
+
+    def test_all_zero_trust_key_is_a_signature_failure_not_a_shape_failure(self):
+        # A well-formed SPKI wrapping 32 zero bytes parses as a key shape;
+        # verification must refuse it as a signature, not as a key error.
+        _, _, msg, sig = RFC8032_VECTORS[0]
+        proc = self.run_ed25519(SPKI_PREFIX + b'\x00' * 32, bytes.fromhex(msg), bytes.fromhex(sig))
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn('signature verification failed', proc.stderr)
+
+    def test_python_signer_matches_rfc_vectors(self):
+        # The test-side signer is held to the RFC vectors too, so the
+        # envelopes it builds on OpenSSL 1.1.1 hosts are well formed.
+        for seed_hex, _, msg_hex, sig_hex in RFC8032_VECTORS:
+            with self.subTest(seed=seed_hex[:8]):
+                signature = python_ed25519_sign(bytes.fromhex(seed_hex), bytes.fromhex(msg_hex))
+                self.assertEqual(signature.hex(), sig_hex)
+
+
+class UpdateManifestDispatch(unittest.TestCase):
+    """Which verifier runs, and what a refusal says, per openssl version."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.key = Key(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def openssl_without_rawin(self):
+        """A stand-in for OpenSSL 1.1.1: no -rawin anywhere, and it records
+        every call so the test proves the fallback never asked it to
+        verify."""
+        bin_dir = os.path.join(self._tmp.name, 'openssl1.1.1')
+        os.makedirs(bin_dir, exist_ok=True)
+        opensslexe = 'openssl.exe' if os.name == 'nt' else 'openssl'
+        shim = os.path.join(bin_dir, opensslexe)
+        log = os.path.join(self._tmp.name, 'openssl.calls')
+        with open(shim, 'w', newline='\n') as handle:
+            handle.write('#!/bin/sh\necho "$*" >> %s\n'
+                         'case " $* " in *" -rawin "*) echo "Unknown option: -rawin" >&2; exit 1;; esac\n'
+                         'case " $* " in *" -help "*) echo "Usage: pkeyutl [options]"; exit 0;; esac\n'
+                         'exit 1\n' % log.replace('\\', '/'))
+        os.chmod(shim, 0o755)
+        return bin_dir, log
+
+    def openssl3_with_failing_verify(self, message):
+        """Answers -help with -rawin present (OpenSSL 3) but fails the
+        verify with a distinctive stderr line, the cause the refusal must
+        carry instead of hiding it. The key conversion succeeds: the
+        failure under test is the signature check."""
+        bin_dir = os.path.join(self._tmp.name, 'openssl3-broken')
+        os.makedirs(bin_dir, exist_ok=True)
+        opensslexe = 'openssl.exe' if os.name == 'nt' else 'openssl'
+        shim = os.path.join(bin_dir, opensslexe)
+        with open(shim, 'w', newline='\n') as handle:
+            handle.write('#!/bin/sh\n'
+                         'case " $* " in *" -help "*) echo "Usage: pkeyutl -rawin ..."; exit 0;; esac\n'
+                         'case " $* " in *" pkey "*) exit 0;; esac\n'
+                         'case " $* " in *" pkeyutl "*) echo "%s" >&2; exit 1;; esac\n'
+                         'exit 1\n' % message)
+        os.chmod(shim, 0o755)
+        return bin_dir
+
+    def run_verify(self, envelope_bytes, bin_dir=None):
+        work = tempfile.mkdtemp(dir=self._tmp.name)
+        env_path = os.path.join(work, 'manifest.signed.json')
+        with open(env_path, 'wb') as handle:
+            handle.write(envelope_bytes)
+        state_path = os.path.join(work, 'state.json')
+        out_dir = os.path.join(work, 'out')
+        os.mkdir(out_dir)
+        # A real python3 shim on PATH, ahead of the fake-openssl directory:
+        # a shell function would not receive the verifier's environment
+        # prefixes on POSIX sh (dash exports them only for commands).
+        interpreter = shutil.which(real_python3()) or real_python3()
+        py_dir = os.path.join(work, 'pybin')
+        os.makedirs(py_dir, exist_ok=True)
+        py_name = 'python3.exe' if os.name == 'nt' else 'python3'
+        with open(os.path.join(py_dir, py_name), 'w', newline='\n') as handle:
+            handle.write('#!/bin/sh\nexec "%s" "$@"\n' % interpreter)
+        os.chmod(os.path.join(py_dir, py_name), 0o755)
+        harness = "%s\nCHANNEL='stable'\nARCH='amd64'\nverify_manifest '%s' '%s' '%s'\n echo RC:$?\n" % (
+            VERIFY_BLOCK, env_path, state_path, out_dir)
+        env = dict(os.environ)
+        env['IMPREZA_RELEASE_PUBLIC_KEY'] = self.key.public_b64
+        prefix = py_dir + os.pathsep + (bin_dir + os.pathsep if bin_dir else '')
+        env['PATH'] = prefix + os.environ.get('PATH', '')
+        harness_path = os.path.join(work, 'harness.sh')
+        with open(harness_path, 'w', newline='') as handle:
+            handle.write(harness)
+        return subprocess.run(['sh', harness_path], capture_output=True, text=True, env=env)
+
+    def test_valid_manifest_verifies_without_rawin_openssl(self):
+        bin_dir, log = self.openssl_without_rawin()
+        proc = self.run_verify(build_envelope(self.key, valid_payload()), bin_dir=bin_dir)
+        self.assertIn('RC:0', proc.stdout, proc.stderr)
+        calls = open(log).read() if os.path.exists(log) else ''
+        self.assertIn('-help', calls)
+        self.assertNotIn('-rawin -', calls.replace('Unknown option: -rawin', ''))
+
+    def test_tampered_payload_refused_without_rawin_openssl(self):
+        bin_dir, _ = self.openssl_without_rawin()
+        envelope = json.loads(build_envelope(self.key, valid_payload()))
+        payload = base64.b64decode(envelope['payload']).decode().replace('0.6.20', '9.9.9')
+        envelope['payload'] = base64.b64encode(payload.encode()).decode()
+        proc = self.run_verify(json.dumps(envelope).encode(), bin_dir=bin_dir)
+        self.assertNotIn('RC:0', proc.stdout)
+        self.assertIn('signature verification failed', proc.stderr + proc.stdout)
+
+    def test_swapped_signature_refused_without_rawin_openssl(self):
+        # A genuine signature — of a different manifest — must not verify
+        # here: the check binds the signature to these exact bytes.
+        bin_dir, _ = self.openssl_without_rawin()
+        envelope = json.loads(build_envelope(self.key, valid_payload()))
+        other = valid_payload(version='0.6.21')
+        other_bytes = json.dumps(other, separators=(',', ':')).encode()
+        envelope['signature'] = base64.b64encode(self.key.sign(DOMAIN + other_bytes)).decode()
+        proc = self.run_verify(json.dumps(envelope).encode(), bin_dir=bin_dir)
+        self.assertNotIn('RC:0', proc.stdout)
+        self.assertIn('signature verification failed', proc.stderr + proc.stdout)
+
+    def test_fallback_says_why_it_engaged(self):
+        # The capability gap is said out loud, on stdout (the caller only
+        # shows verify_manifest's stderr on refusal); the real signature
+        # failure keeps its own clear message.
+        bin_dir, _ = self.openssl_without_rawin()
+        proc = self.run_verify(build_envelope(self.key, valid_payload()), bin_dir=bin_dir)
+        self.assertIn('RC:0', proc.stdout, proc.stderr)
+        self.assertIn('this OpenSSL has no raw Ed25519 support', proc.stdout)
+        envelope = json.loads(build_envelope(self.key, valid_payload()))
+        payload = base64.b64decode(envelope['payload']).decode().replace('0.6.20', '9.9.9')
+        envelope['payload'] = base64.b64encode(payload.encode()).decode()
+        proc = self.run_verify(json.dumps(envelope).encode(), bin_dir=bin_dir)
+        self.assertNotIn('RC:0', proc.stdout)
+        output = proc.stderr + proc.stdout
+        self.assertIn('this OpenSSL has no raw Ed25519 support', output)
+        self.assertIn('signature verification failed', output)
+
+    def test_openssl_failure_reports_the_cause(self):
+        bin_dir = self.openssl3_with_failing_verify('Error: mock signature engine failure XYZ')
+        proc = self.run_verify(build_envelope(self.key, valid_payload()), bin_dir=bin_dir)
+        self.assertNotIn('RC:0', proc.stdout)
+        output = proc.stderr + proc.stdout
+        self.assertIn('signature verification failed', output)
+        self.assertIn('mock signature engine failure XYZ', output)
+
+    def test_key_conversion_failure_reports_the_cause(self):
+        bin_dir = self.openssl3_with_failing_verify('unused')
+        # pkey conversion also fails distinctly: make -help pass but the
+        # pkey call fail with its own message.
+        shim = os.path.join(bin_dir, 'openssl.exe' if os.name == 'nt' else 'openssl')
+        with open(shim, 'w', newline='\n') as handle:
+            handle.write('#!/bin/sh\n'
+                         'case " $* " in *" -help "*) echo "Usage: pkeyutl -rawin ..."; exit 0;; esac\n'
+                         'case " $* " in *" pkey "*) echo "Error: mock key parse failure K3Y" >&2; exit 1;; esac\n'
+                         'exit 1\n')
+        os.chmod(shim, 0o755)
+        proc = self.run_verify(build_envelope(self.key, valid_payload()), bin_dir=bin_dir)
+        self.assertNotIn('RC:0', proc.stdout)
+        output = proc.stderr + proc.stdout
+        self.assertIn('trust key unusable', output)
+        self.assertIn('mock key parse failure K3Y', output)
 
 
 if __name__ == '__main__':
