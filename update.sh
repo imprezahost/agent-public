@@ -10,6 +10,11 @@
 # Once a channel's manifest has been accepted on a server it is mandatory:
 # a missing or unverifiable manifest refuses the update instead of
 # falling back to same-origin checksums.
+# Exit status: 0 on success; 1 when the update itself failed (the previous
+# agent is restored); 2 for usage errors; 3 when the agent is updated but
+# the ingress boot unit could not be enabled — the allowlists stay
+# unprotected in the boot window until it is; repair with
+# 'systemctl enable impreza-agent-ingress.service'.
 set -eu
 main() {
     MODE=${1:---check}
@@ -468,6 +473,52 @@ PYMANIFEST
     CURRENT=$(timeout 10 "$BIN" --version | sed -n 's/^impreza-agent version v\{0,1\}\([0-9][0-9.]*\)$/\1/p')
     echo "Installed: ${CURRENT:-unknown}; available: $VERSION (channel $CHANNEL)"
     [ "$MODE" = --apply ] || exit 0
+    # ─── Ingress boot unit ────────────────────────────────────────────
+    # install.sh and the packages ship it; an update repairs it too. The
+    # unit is inert until the platform stores a restricted allowlist, but
+    # without it there is no restore of the allowlists in the boot window
+    # before Docker publishes ports. Idempotent: same bytes, re-enabled.
+    if [ ! -e /etc/systemd/system/impreza-agent-ingress.service ]; then
+        echo 'Repairing the ingress boot unit: it was missing on this installation.'
+    fi
+    cat >/etc/systemd/system/impreza-agent-ingress.service <<'UNIT'
+[Unit]
+Description=Impreza ingress allowlists (restored before Docker publishes ports)
+Documentation=https://docs.imprezahost.com/agent
+# Render the stored per-deployment allowlists before Docker starts the
+# containers, so no restricted port is reachable in the boot window, and
+# again before every Docker (re)start. After the host firewall managers so
+# their startup does not reorder or flush the rules afterwards. Ordering
+# only: a failure here never blocks Docker; the agent retries and reports.
+DefaultDependencies=no
+After=local-fs.target firewalld.service ufw.service
+Before=docker.service
+ConditionPathExists=/var/lib/impreza-agent/ingress.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/impreza-agent ingress restore
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/impreza-agent
+
+[Install]
+WantedBy=multi-user.target docker.service
+UNIT
+    systemctl daemon-reload
+    # A failed enable must not read as success: the customer would see
+    # "updated" while the boot window the unit closes comes back on the
+    # next reboot. The update itself still completes — only the exit
+    # status and the warning say the unit needs a manual repair.
+    UNIT_ENABLE_STATUS=0
+    if ! systemctl enable impreza-agent-ingress.service >/dev/null 2>&1; then
+        echo "WARNING: the agent is updated, but the ingress boot unit could not be enabled; the allowlists stay unprotected in the boot window until it is. Repair: systemctl enable impreza-agent-ingress.service" >&2
+        UNIT_ENABLE_STATUS=3
+    fi
     if [ -n "$CURRENT" ] && [ "$CURRENT" != "$VERSION" ] && [ "$(printf '%s\n%s\n' "$CURRENT" "$VERSION" | sort -V | head -1)" = "$VERSION" ]; then echo 'Downgrade refused.' >&2; exit 1; fi
     NAME=impreza-agent-linux-$ARCH
     if [ "$MANIFEST_MODE" = 1 ]; then
@@ -486,7 +537,7 @@ PYMANIFEST
     if [ "$(sha256sum "$TMP/candidate" | cut -d ' ' -f 1)" = "$(sha256sum "$BIN" | cut -d ' ' -f 1)" ]; then
         if [ "$MANIFEST_MODE" = 1 ]; then record_state; fi
         echo 'Agent is already current.'
-        exit 0
+        exit "$UNIT_ENABLE_STATUS"
     fi
     echo 'Restarting only the agent. Run this update only when deployment operations are idle.'
     cp -p "$BIN" "$TMP/previous"
@@ -508,5 +559,6 @@ PYMANIFEST
     if [ "$MANIFEST_MODE" = 1 ]; then record_state; fi
     CHANGED=0
     echo "Agent $VERSION is running. Confirm its new heartbeat in the portal. Credentials, configuration and app containers were preserved."
+    exit "$UNIT_ENABLE_STATUS"
 }
 main "$@"
