@@ -1,9 +1,7 @@
-# Agent 0.6.33
+# Agent 0.6.34
 
-- Uninstall no longer reports success until the agent has confirmed that the application's containers are gone, including those of a legacy Compose project name. If a container survives, the uninstall fails and keeps the application's configuration so it can be retried.
-- The first proxy reload after the agent starts waits until the local proxy admin is ready, instead of failing while that admin is still starting.
-- A full queue of accepted backup cleanups no longer holds the next command. The agent warns only after the control plane has accepted the result.
-- After a database promotion, the agent drops a transit schema only when it is empty and belongs to the same owner.
+- On IPv6, a forwarded connection rewritten to a unique-local address outside the host is dropped, as the metadata range already is on IPv4. A rewritten connection onto a container address on one of Docker's own bridges is unchanged, and DNS to a unique-local resolver still works.
+- While the control plane marks this agent for uptime checks, it does not poll for commands or send heartbeats and application metrics. The uptime target exchange continues. When the mark is removed, polling and reporting resume.
 
 Updates are explicit customer actions and preserve agent identity, configuration and applications. Finish active operations before updating. Agents 0.6.22 and later can update from the portal, API or MCP; older agents update once with update.sh.
 See https://docs.imprezahost.com/agent-updates.html.
