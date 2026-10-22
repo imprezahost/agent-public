@@ -1,7 +1,8 @@
-# Agent 0.6.35
+# Agent 0.6.36
 
-- A deployment result now says whether the existing public HTTPS check confirmed the application's address, and warns when the public route could not be applied. The application stays installed either way; the result is one observation at deployment time, not continuous monitoring.
-- The updater checks the offered agent's size, digest and embedded version before it touches the installed ingress boot unit. A refused update leaves the installed agent and its boot unit unchanged.
+- Changing an application's domain keeps the current domain serving until the new one is proven. An interrupted change is either finished or undone, so the application is not left without a working address.
+- The Tor sidecar runs exactly the Tor version pinned by its image digest.
+- A custom build refuses changed inputs before any container starts.
 
 Updates are explicit customer actions and preserve agent identity, configuration and applications. Finish active operations before updating. Agents 0.6.22 and later can update from the portal, API or MCP; older agents update once with update.sh.
 See https://docs.imprezahost.com/agent-updates.html.
