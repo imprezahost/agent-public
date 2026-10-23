@@ -15,6 +15,8 @@
 # the ingress boot unit could not be enabled — the allowlists stay
 # unprotected in the boot window until it is; repair with
 # 'systemctl enable impreza-agent-ingress.service'.
+# Status 3 also covers a required activation failure or an operator override
+# that must be reviewed before this unit can be activated safely.
 set -eu
 main() {
     MODE=${1:---check}
@@ -22,7 +24,7 @@ main() {
     [ "$(id -u)" -eq 0 ] || { echo 'Run as root.' >&2; exit 1; }
     [ "$(uname -s)" = Linux ] || { echo 'Linux is required.' >&2; exit 1; }
     case "$(uname -m)" in x86_64|amd64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; *) echo 'Unsupported architecture.' >&2; exit 1;; esac
-    for tool in curl sha256sum flock systemctl timeout sort awk; do command -v "$tool" >/dev/null || { echo "Missing dependency: $tool" >&2; exit 1; }; done
+    for tool in curl sha256sum flock systemctl timeout sort awk cmp stat sync; do command -v "$tool" >/dev/null || { echo "Missing dependency: $tool" >&2; exit 1; }; done
     BIN=/usr/local/bin/impreza-agent
     [ -f "$BIN" ] && [ ! -L "$BIN" ] && [ -s /etc/impreza-agent/config.toml ] || { echo 'No standard registered agent installation found. Configuration will not be changed.' >&2; exit 1; }
     systemctl cat impreza-agent.service >/dev/null || exit 1
@@ -76,6 +78,7 @@ main() {
                 exit 1
             fi
         fi
+        if [ -n "${UNIT_TMP:-}" ]; then rm -f -- "$UNIT_TMP"; fi
         rm -rf -- "$TMP"
         exit "$code"
     }
@@ -490,15 +493,47 @@ PYMANIFEST
     [ "$(timeout 10 "$TMP/candidate" --version)" = "impreza-agent version $VERSION" ] || { echo 'Release version mismatch.' >&2; exit 1; }
     # Validate the complete candidate before repairing any installed unit.
     # A refused artifact must leave the existing boot contract untouched.
-    # ─── Ingress boot unit ────────────────────────────────────────────
-    # install.sh and the packages ship it; an update repairs it too. The
-    # unit is inert until the platform stores a restricted allowlist, but
-    # without it there is no restore of the allowlists in the boot window
-    # before Docker publishes ports. Idempotent: same bytes, re-enabled.
-    if [ ! -e /etc/systemd/system/impreza-agent-ingress.service ]; then
-        echo 'Repairing the ingress boot unit: it was missing on this installation.'
-    fi
-    cat >/etc/systemd/system/impreza-agent-ingress.service <<'UNIT'
+    # >>> ingress-unit-repair
+    # Only our exact old unit is upgraded; custom files and drop-ins belong
+    # to the operator. Candidate admission has already completed here.
+    repair_ingress_unit() {
+        UNIT_FILE=/etc/systemd/system/impreza-agent-ingress.service
+        cat >"$TMP/ingress.expected" <<'INGRESS_EXPECTED'
+[Unit]
+Description=Impreza ingress allowlists (restored before Docker publishes ports)
+Documentation=https://docs.imprezahost.com/agent
+# Render the stored per-deployment allowlists before Docker starts the
+# containers, so no restricted port is reachable in the boot window, and
+# again before every Docker (re)start. After the host firewall managers so
+# their startup does not reorder or flush the rules afterwards. Ordering
+# only: a failure here never blocks Docker; the agent retries and reports.
+# The unit stays active after the restore (RemainAfterExit) so it can be
+# reloaded; PartOf restarts it with Docker, keeping the restore before
+# every Docker (re)start. Reload re-renders only the stored allowlists,
+# validating every family first; on any refusal the previous rules stay.
+DefaultDependencies=no
+After=local-fs.target firewalld.service ufw.service
+Before=docker.service
+PartOf=docker.service
+ConditionPathExists=/var/lib/impreza-agent/ingress.json
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/impreza-agent ingress restore
+ExecReload=/usr/local/bin/impreza-agent ingress reload
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/impreza-agent
+
+[Install]
+WantedBy=multi-user.target docker.service
+INGRESS_EXPECTED
+        cat >"$TMP/ingress.legacy" <<'INGRESS_LEGACY'
 [Unit]
 Description=Impreza ingress allowlists (restored before Docker publishes ports)
 Documentation=https://docs.imprezahost.com/agent
@@ -525,19 +560,72 @@ ReadWritePaths=/var/lib/impreza-agent
 
 [Install]
 WantedBy=multi-user.target docker.service
-UNIT
-    systemctl daemon-reload
+INGRESS_LEGACY
+        if [ -L "$UNIT_FILE" ] || { [ -e "$UNIT_FILE" ] && [ ! -f "$UNIT_FILE" ]; }; then
+            echo 'Custom ingress unit type: preserved; repair manually.' >&2
+            return 1
+        fi
+        if [ -e "$UNIT_FILE" ]; then
+            case "$(stat -c '%u:%a' "$UNIT_FILE")" in 0:600|0:640|0:644) ;; *)
+                echo 'Unsafe ingress unit ownership or permissions: preserved.' >&2; return 1;;
+            esac
+            if cmp -s "$UNIT_FILE" "$TMP/ingress.expected"; then
+                UNIT_RELOAD=$(systemctl show impreza-agent-ingress.service -p NeedDaemonReload --value) || return 1
+                case "$UNIT_RELOAD" in
+                    yes) systemctl daemon-reload || return 1;;
+                    no) ;;
+                    *) echo 'Ingress unit manager state is unknown.' >&2; return 1;;
+                esac
+                return 0
+            fi
+            if ! cmp -s "$UNIT_FILE" "$TMP/ingress.legacy"; then
+                echo 'Custom ingress unit contents: preserved; repair manually.' >&2
+                return 1
+            fi
+        fi
+        UNIT_TMP=$(mktemp /etc/systemd/system/.impreza-ingress.XXXXXX) || return 1
+        cat "$TMP/ingress.expected" >"$UNIT_TMP" || return 1
+        chmod 0644 "$UNIT_TMP" || return 1
+        sync -f "$UNIT_TMP" || return 1
+        mv -f -- "$UNIT_TMP" "$UNIT_FILE" || return 1
+        UNIT_TMP=
+        sync -f /etc/systemd/system || return 1
+        systemctl daemon-reload || return 1
+    }
+    activate_ingress_if_needed() {
+        # No policy, no start. Never restart an active ingress or load an
+        # operator override. The agent independently admits the effective unit.
+        [ -f /var/lib/impreza-agent/ingress.json ] && [ ! -L /var/lib/impreza-agent/ingress.json ] || return 0
+        if ! UNIT_DROPINS=$(systemctl show impreza-agent-ingress.service -p DropInPaths --value); then
+            UNIT_ENABLE_STATUS=3; return 0
+        fi
+        if [ -n "$UNIT_DROPINS" ]; then
+            echo 'WARNING: ingress overrides were preserved; activation needs operator review.' >&2
+            UNIT_ENABLE_STATUS=3; return 0
+        fi
+        if ! systemctl is-active --quiet impreza-agent-ingress.service; then
+            if ! systemctl start impreza-agent-ingress.service; then
+                echo 'WARNING: the ingress unit could not be activated; check it locally.' >&2
+                UNIT_ENABLE_STATUS=3
+            fi
+        fi
+    }
+    # <<< ingress-unit-repair
+    repair_ingress_unit
     # A failed enable must not read as success: the customer would see
     # "updated" while the boot window the unit closes comes back on the
     # next reboot. The update itself still completes — only the exit
     # status and the warning say the unit needs a manual repair.
     UNIT_ENABLE_STATUS=0
+    if ! systemctl is-enabled --quiet impreza-agent-ingress.service; then
     if ! systemctl enable impreza-agent-ingress.service >/dev/null 2>&1; then
         echo "WARNING: the agent is updated, but the ingress boot unit could not be enabled; the allowlists stay unprotected in the boot window until it is. Repair: systemctl enable impreza-agent-ingress.service" >&2
         UNIT_ENABLE_STATUS=3
     fi
+    fi
     if [ "$(sha256sum "$TMP/candidate" | cut -d ' ' -f 1)" = "$(sha256sum "$BIN" | cut -d ' ' -f 1)" ]; then
         if [ "$MANIFEST_MODE" = 1 ]; then record_state; fi
+        activate_ingress_if_needed
         echo 'Agent is already current.'
         exit "$UNIT_ENABLE_STATUS"
     fi
@@ -569,6 +657,7 @@ UNIT
     done
     if [ "$MANIFEST_MODE" = 1 ]; then record_state; fi
     CHANGED=0
+    activate_ingress_if_needed
     echo "Agent $VERSION is running. Confirm its new heartbeat in the portal. Credentials, configuration and app containers were preserved."
     exit "$UNIT_ENABLE_STATUS"
 }

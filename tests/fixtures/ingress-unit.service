@@ -1,0 +1,33 @@
+[Unit]
+Description=Impreza ingress allowlists (restored before Docker publishes ports)
+Documentation=https://docs.imprezahost.com/agent
+# Render the stored per-deployment allowlists before Docker starts the
+# containers, so no restricted port is reachable in the boot window, and
+# again before every Docker (re)start. After the host firewall managers so
+# their startup does not reorder or flush the rules afterwards. Ordering
+# only: a failure here never blocks Docker; the agent retries and reports.
+# The unit stays active after the restore (RemainAfterExit) so it can be
+# reloaded; PartOf restarts it with Docker, keeping the restore before
+# every Docker (re)start. Reload re-renders only the stored allowlists,
+# validating every family first; on any refusal the previous rules stay.
+DefaultDependencies=no
+After=local-fs.target firewalld.service ufw.service
+Before=docker.service
+PartOf=docker.service
+ConditionPathExists=/var/lib/impreza-agent/ingress.json
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/impreza-agent ingress restore
+ExecReload=/usr/local/bin/impreza-agent ingress reload
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/impreza-agent
+
+[Install]
+WantedBy=multi-user.target docker.service
